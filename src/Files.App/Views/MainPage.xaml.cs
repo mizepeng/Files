@@ -334,7 +334,12 @@ namespace Files.App.Views
 		{
 			ViewModel.OnPageLoaded();
 
-			MainWindow.Instance.AppWindow.Changed += (_, _) => MainWindow.Instance.RaiseSetTitleBarDragRegion(SetTitleBarDragRegion);
+			MainWindow.Instance.AppWindow.Changed += (_, args) =>
+			{
+				// 拖动窗口时每帧都会触发位置变化，标题栏区域与窗口位置无关，只在尺寸或模式变化时刷新
+				if (args.DidSizeChange || args.DidPresenterChange)
+					MainWindow.Instance.RaiseSetTitleBarDragRegion(SetTitleBarDragRegion);
+			};
 
 			MainWindow.Instance.RaiseSetTitleBarDragRegion(SetTitleBarDragRegion);
 
