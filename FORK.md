@@ -1,6 +1,6 @@
 # Fork 说明
 
-本仓库 fork 自 [files-community/Files](https://github.com/files-community/Files)，自行编译、签名后安装使用（包名 `FilesDev`）。
+本仓库 fork 自 [files-community/Files](https://github.com/files-community/Files)，自行编译、签名后安装使用（包名 `FilesDev`）。安装、从官方版迁移、构建打包的步骤见 [INSTALL.md](INSTALL.md)。
 
 ## 上游基线
 
