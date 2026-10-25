@@ -17,6 +17,9 @@ namespace Files.App.Data.Models
 
 		private readonly SemaphoreSlim addSyncSemaphore = new(1, 1);
 
+		// 并发向 Shell 请求固定项图标时，除最先到达的请求外大多静默返回空，因此逐个获取
+		private readonly SemaphoreSlim iconLoadSemaphore = new(1, 1);
+
 		public List<string> PinnedFolders { get; set; } = [];
 
 		public readonly List<INavigationControlItem> _PinnedFolderItems = [];
@@ -142,11 +145,23 @@ namespace Files.App.Data.Models
 		{
 			try
 			{
-				var result = await FileThumbnailHelper.GetIconAsync(
-					path,
-					Constants.ShellIconSizes.Small,
-					isFolder,
-					IconOptions.ReturnIconOnly | IconOptions.SkipSizeSnapping);
+				byte[]? result;
+				await iconLoadSemaphore.WaitAsync();
+				try
+				{
+					result = await FileThumbnailHelper.GetIconAsync(
+						path,
+						Constants.ShellIconSizes.Small,
+						isFolder,
+						IconOptions.ReturnIconOnly | IconOptions.SkipSizeSnapping);
+				}
+				finally
+				{
+					iconLoadSemaphore.Release();
+				}
+
+				if (result is null)
+					App.Logger.LogWarning("Pinned item icon is empty for {Path}", LogPathHelper.RedactPath(path));
 
 				locationItem.IconData = result;
 
