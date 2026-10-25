@@ -1,6 +1,7 @@
 // Copyright (c) Files Community
 // Licensed under the MIT License.
 
+using Microsoft.Extensions.Logging;
 using System.Windows.Input;
 
 namespace Files.App.ViewModels
@@ -111,6 +112,16 @@ namespace Files.App.ViewModels
 			var reloadRecentFilesWidget = WidgetsHelpers.TryGetWidget<RecentFilesWidgetViewModel>(this);
 			var insertIndex = 0;
 
+			// 诊断：主页偶发只显示部分小组件，记录每次重载时各小组件的加载判定与已有数量
+			App.Logger.LogInformation(
+				"Home widgets reload: quickAccess={QuickAccess} drives={Drives} network={Network} fileTags={FileTags} recent={Recent} existing={Existing}",
+				reloadQuickAccessWidget,
+				reloadDrivesWidget,
+				reloadNetworkLocationsWidget,
+				reloadFileTagsWidget,
+				reloadRecentFilesWidget,
+				WidgetItems.Count);
+
 			if (reloadQuickAccessWidget)
 			{
 				var quickAccessWidget = new QuickAccessWidget();
@@ -193,6 +204,7 @@ namespace Files.App.ViewModels
 			await MainWindow.Instance.DispatcherQueue.EnqueueOrInvokeAsync(async () =>
 			{
 				await Task.WhenAll(WidgetItems.Select(x => x.WidgetItemModel.RefreshWidgetAsync()));
+				App.Logger.LogInformation("Home widgets refreshed: [{Widgets}]", string.Join(", ", WidgetItems.Select(x => x.WidgetItemModel.WidgetName)));
 			});
 		}
 
@@ -221,7 +233,16 @@ namespace Files.App.ViewModels
 			{
 				MainWindow.Instance.DispatcherQueue.EnqueueOrInvokeAsync(() =>
 				{
-					WidgetItems.Insert(atIndex, widgetModel);
+					// 插入在排队后才执行，索引可能已失效；异常在未等待的任务里会被吞掉，这里记录下来
+					try
+					{
+						WidgetItems.Insert(atIndex, widgetModel);
+					}
+					catch (Exception ex)
+					{
+						App.Logger.LogWarning(ex, "Home widget insert failed: {Widget} at {Index}, count={Count}", widgetItemModel.WidgetName, atIndex, WidgetItems.Count);
+						throw;
+					}
 				});
 			}
 
@@ -278,8 +299,17 @@ namespace Files.App.ViewModels
 
 		private async Task ExecuteReloadWidgetsCommand()
 		{
-			ReloadWidgets();
-			await RefreshWidgetProperties();
+			// AsyncRelayCommand 会吞掉异常，记录后再抛出，保持原有行为
+			try
+			{
+				ReloadWidgets();
+				await RefreshWidgetProperties();
+			}
+			catch (Exception ex)
+			{
+				App.Logger.LogWarning(ex, "Home widgets reload failed");
+				throw;
+			}
 		}
 
 		// Disposer
