@@ -1844,6 +1844,9 @@
   <data name="SettingsSetAsOpenDialog" xml:space="preserve">
     <value>使用 Files 作为打开文件对话框</value>
   </data>
+  <data name="SettingsSetAsOpenDialogUnavailable" xml:space="preserve">
+    <value>不可用：当前版本未包含打开/保存对话框组件</value>
+  </data>
   <data name="Tag" xml:space="preserve">
     <value>文件标签</value>
   </data>

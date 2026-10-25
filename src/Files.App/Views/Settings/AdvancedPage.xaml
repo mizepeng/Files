@@ -138,12 +138,14 @@
 			<wctcontrols:SettingsCard
 				x:Name="ReplaceOpenFileDialogSetting"
 				x:Load="{x:Bind ViewModel.IsAppEnvironmentDev}"
+				Description="{helpers:ResourceString Name=SettingsSetAsOpenDialogUnavailable}"
 				Header="{helpers:ResourceString Name=SettingsSetAsOpenDialog}">
 				<wctcontrols:SettingsCard.HeaderIcon>
 					<FontIcon Glyph="&#xE8E5;" />
 				</wctcontrols:SettingsCard.HeaderIcon>
+				<!--  打包流程不编译 OpenDialog/SaveDialog 组件，开关无法生效，固定禁用  -->
 				<ToggleSwitch
-					IsEnabled="{x:Bind ViewModel.IsSetAsDefaultFileManager, Mode=OneWay}"
+					IsEnabled="False"
 					IsOn="{x:Bind ViewModel.IsSetAsOpenFileDialog, Mode=TwoWay}"
 					Toggled="SetAsOpenFileDialog_Toggled" />
 			</wctcontrols:SettingsCard>

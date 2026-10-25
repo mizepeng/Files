@@ -71,12 +71,13 @@ namespace Files.App.ViewModels.Settings
 			var dataPath = Environment.ExpandEnvironmentVariables("%LocalAppData%\\Files");
 			if (IsSetAsDefaultFileManager)
 			{
-				var sourcePath = Path.Combine(destFolder, "*");
 				var branchPath = Path.Combine(dataPath, "Branch.txt");
-				var command = $"-command \"New-Item -Force -Path {Win32Helper.ToPowerShellStringLiteral(dataPath)} -ItemType Directory; Copy-Item -Filter *.* -Path {Win32Helper.ToPowerShellStringLiteral(sourcePath)} -Recurse -Force -Destination {Win32Helper.ToPowerShellStringLiteral(dataPath)}; 'files-dev' | Out-File -Encoding utf8 -Force -FilePath {Win32Helper.ToPowerShellStringLiteral(branchPath)}\"";
+				// 包内文件可能带有 Application Protected 加密，Copy-Item 会因无法在目标保留加密而失败，改为按字节复制；
+				// 并让任何错误终止脚本，避免复制失败后仍导入指向不存在文件的注册表
+				var command = $"-command \"$ErrorActionPreference = 'Stop'; New-Item -Force -Path {Win32Helper.ToPowerShellStringLiteral(dataPath)} -ItemType Directory | Out-Null; Get-ChildItem -LiteralPath {Win32Helper.ToPowerShellStringLiteral(destFolder)} -File | ForEach-Object {{ [System.IO.File]::WriteAllBytes((Join-Path {Win32Helper.ToPowerShellStringLiteral(dataPath)} $_.Name), [System.IO.File]::ReadAllBytes($_.FullName)) }}; 'files-dev' | Out-File -Encoding utf8 -Force -FilePath {Win32Helper.ToPowerShellStringLiteral(branchPath)}\"";
 				if (!await Win32Helper.RunPowershellCommandAsync(command, PowerShellExecutionOptions.Hidden))
 				{
-					// Error copying files
+					App.Logger.LogWarning("SetAsDefaultExplorerAsync: failed to copy launcher files to {DataPath}", dataPath);
 					await DetectResult();
 					return;
 				}

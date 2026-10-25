@@ -1844,6 +1844,9 @@
   <data name="SettingsSetAsOpenDialog" xml:space="preserve">
     <value>Use Files as Open File Dialog</value>
   </data>
+  <data name="SettingsSetAsOpenDialogUnavailable" xml:space="preserve">
+    <value>Unavailable: this build does not include the open/save dialog components</value>
+  </data>
   <data name="Tag" xml:space="preserve">
     <value>Tag</value>
   </data>
