@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using CommunityToolkit.WinUI;
+using Files.App.Actions;
 using Files.App.Controls;
 using Microsoft.Extensions.Logging;
 using Microsoft.UI.Dispatching;
@@ -286,6 +287,12 @@ namespace Files.App.Views
 
 					// Execute command for hotkey
 					var command = Commands[hotKey];
+
+					// The "@" key depends on the active keyboard layout
+					if (command.Code is CommandCodes.None && !Commands.GoToFolderAlias.IsCustomHotKeys && GoToFolderAliasAction.IsAtHotKey(hotKey))
+						command = Commands.GoToFolderAlias;
+					else if (command.Code is CommandCodes.GoToFolderAlias && !command.IsCustomHotKeys && !GoToFolderAliasAction.IsAtHotKey(hotKey))
+						break;
 
 					if (command.Code is CommandCodes.OpenItem && (source?.FindAscendantOrSelf<Omnibar>() is not null || source?.FindAscendantOrSelf<AppBarButton>() is not null))
 						break;
@@ -585,18 +592,12 @@ namespace Files.App.Views
 			SidebarAdaptiveViewModel.HandleItemContextInvokedAsync(sender, e);
 		}
 
-		private async void SidebarControl_ItemDragOver(object sender, ItemDragOverEventArgs e)
+		private void SidebarControl_ItemDragOver(object sender, ItemDragOverEventArgs e)
 		{
-			// GetDeferral()/Complete() can throw COMException if the underlying drag operation has already been released (e.g. canceled by the system or window closed)
-			var deferral = SafetyExtensions.IgnoreExceptions(() => e.RawEvent.GetDeferral(), App.Logger);
-
-			await SafetyExtensions.IgnoreExceptions(async () =>
+			e.DeferUntil(SafetyExtensions.IgnoreExceptions(async () =>
 			{
 				await SidebarAdaptiveViewModel.HandleItemDragOverAsync(e);
-			}, App.Logger);
-
-			if (deferral is not null)
-				SafetyExtensions.IgnoreExceptions(() => deferral.Complete(), App.Logger);
+			}, App.Logger));
 		}
 
 		private async void SidebarControl_ItemDropped(object sender, ItemDroppedEventArgs e)
