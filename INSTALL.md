@@ -136,7 +136,10 @@ Set-Location $repo
 msbuild src\Files.App.Launcher\Files.App.Launcher.vcxproj -t:Restore -p:RestorePackagesConfig=true "-p:SolutionDir=$repo\\" -p:Configuration=Release -p:Platform=x64 -v:quiet
 msbuild src\Files.App.Launcher\Files.App.Launcher.vcxproj -t:Build "-p:SolutionDir=$repo\\" -p:Configuration=Release -p:Platform=x64 -v:quiet -clp:ErrorsOnly
 
-# 2) 编译并打包（先 Clean 再 Build）
+# 2) 单独还原 Files.App.Server：它不是 Files.App 的 ProjectReference，下一步的 -restore 不会还原它
+msbuild -t:Restore src\Files.App.Server\Files.App.Server.csproj -p:Configuration=Release -p:Platform=x64 -v:quiet
+
+# 3) 编译并打包（先 Clean 再 Build）
 msbuild -restore src\Files.App\Files.App.csproj "-t:Clean;Build" -p:Configuration=Release -p:Platform=x64 -p:AppxBundlePlatforms=x64 -p:AppxBundle=Always -p:GenerateAppxPackageOnBuild=true -p:UapAppxPackageBuildMode=SideloadOnly "-p:AppxPackageDir=$repo\artifacts\AppxPackages\\" -p:AppxPackageSigningEnabled=true "-p:PackageCertificateKeyFile=$repo\artifacts\FilesApp_SelfSigned.pfx" -p:PackageCertificatePassword="" -p:PackageCertificateThumbprint="" -v:quiet -clp:ErrorsOnly
 ```
 
@@ -158,6 +161,7 @@ Test-Path src\Files.App\Assets\FilesOpenDialog\Files.App.Launcher.exe
 | `Could not read the Windows SDK's Platform.xml` | 未安装 Windows SDK 10.0.26100 |
 | `'vswhere.exe' 不是内部或外部命令`（链接 Files.App.Server 时） | 未把 VS Installer 目录加入 PATH，见构建脚本第一行 |
 | Launcher 编译报缺少 `Microsoft.Windows.ImplementationLibrary` | 还原时漏了 `-p:RestorePackagesConfig=true` 和 `-p:SolutionDir=` |
+| 打包报找不到 `SQLite3Provider_winsqlite3` 等 Server 依赖 | 漏了构建脚本第 2 步，单独还原 `Files.App.Server` |
 | 双击安装包提示无法验证发布者 | 证书没有导入到「本地计算机 → 受信任的人」 |
 | 安装提示已安装相同或更高版本 | 递增 `Version` 后重新打包 |
 | Win+E 报「找不到应用程序」 | 检查 `%LOCALAPPDATA%\Files\Files.App.Launcher.exe` 是否存在；在设置里关闭再打开「设为默认文件管理器」 |

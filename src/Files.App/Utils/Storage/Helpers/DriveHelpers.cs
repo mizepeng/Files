@@ -1,7 +1,6 @@
 // Copyright (c) Files Community
 // Licensed under the MIT License.
 
-using DiscUtils.Udf;
 using Windows.Devices.Enumeration;
 using Windows.Devices.Portable;
 using Windows.Storage;
@@ -25,7 +24,7 @@ namespace Files.App.Utils.Storage
 			var drivesViewModel = Ioc.Default.GetRequiredService<DrivesViewModel>();
 
 			var matchingDrive = drivesViewModel.Drives.Cast<DriveItem>().FirstOrDefault(x => drivePath.StartsWith(x.Path!, StringComparison.Ordinal));
-			if (matchingDrive is null || matchingDrive.Type != Data.Items.DriveType.CDRom || matchingDrive.MaxSpace != ByteSizeLib.ByteSize.FromBytes(0))
+			if (matchingDrive is null || matchingDrive.Type != DriveType.CDRom || matchingDrive.MaxSpace != ByteSizeLib.ByteSize.FromBytes(0))
 				return false;
 
 			var ejectButton = await DialogDisplayHelper.ShowDialogAsync(
@@ -84,7 +83,7 @@ namespace Files.App.Utils.Storage
 			// Network share
 			else if (
 						  (devicePath.StartsWith(@"\\", StringComparison.Ordinal) ||
-							 GetDriveType(new SystemIO.DriveInfo(devicePath)) is DriveType.Network) &&
+							 new SystemIO.DriveInfo(devicePath).DriveType is SystemIO.DriveType.Network) &&
 						  !devicePath.StartsWith(@"\\SHELL\", StringComparison.Ordinal)
 					)
 			{
@@ -109,7 +108,7 @@ namespace Files.App.Utils.Storage
 			try
 			{
 				return path.StartsWith(@"\\", StringComparison.Ordinal) ||
-					GetDriveType(new SystemIO.DriveInfo(path)) is Data.Items.DriveType.Network;
+					new SystemIO.DriveInfo(path).DriveType is SystemIO.DriveType.Network;
 			}
 			catch
 			{
@@ -138,67 +137,6 @@ namespace Files.App.Utils.Storage
 				try { return new SystemIO.DriveInfo(root).DriveType == SystemIO.DriveType.Network; }
 				catch { return false; }
 			});
-		}
-
-		public static Data.Items.DriveType GetDriveType(System.IO.DriveInfo drive)
-		{
-			if (drive.DriveType is System.IO.DriveType.Unknown)
-			{
-				string path = PathNormalization.NormalizePath(drive.Name);
-
-				if (path is "A:" or "B:")
-					return Data.Items.DriveType.FloppyDisk;
-			}
-
-			return drive.DriveType switch
-			{
-				SystemIO.DriveType.CDRom => Data.Items.DriveType.CDRom,
-				SystemIO.DriveType.Fixed => Data.Items.DriveType.Fixed,
-				SystemIO.DriveType.Network => Data.Items.DriveType.Network,
-				SystemIO.DriveType.NoRootDirectory => Data.Items.DriveType.NoRootDirectory,
-				SystemIO.DriveType.Ram => Data.Items.DriveType.Ram,
-				SystemIO.DriveType.Removable => Data.Items.DriveType.Removable,
-				_ => Data.Items.DriveType.Unknown,
-			};
-		}
-
-		public static unsafe string GetExtendedDriveLabel(SystemIO.DriveInfo drive)
-		{
-			return SafetyExtensions.IgnoreExceptions(() =>
-			{
-				if (drive.DriveType is not SystemIO.DriveType.CDRom || drive.DriveFormat is not "UDF")
-					return drive.VolumeLabel;
-
-				return SafetyExtensions.IgnoreExceptions(() =>
-				{
-					string dosDevicePath = "";
-
-					fixed (char* cDeviceName = drive.Name)
-					{
-						var cch = PInvoke.QueryDosDevice(cDeviceName, null, 0u);
-
-						fixed (char* cTargetPath = new char[cch])
-						{
-							PWSTR pszTargetPath = new(cTargetPath);
-							PInvoke.QueryDosDevice(cDeviceName, pszTargetPath, 0u);
-							dosDevicePath = pszTargetPath.ToString();
-						}
-					}
-
-					if (string.IsNullOrEmpty(dosDevicePath))
-						return drive.VolumeLabel;
-
-					using var driveStream = new SystemIO.FileStream(
-						dosDevicePath.Replace(@"\Device\", @"\\.\"),
-						SystemIO.FileMode.Open,
-						SystemIO.FileAccess.Read);
-
-					using var udf = new UdfReader(driveStream);
-
-					return udf.VolumeLabel;
-				}) ?? drive.VolumeLabel;
-
-			}) ?? "";
 		}
 
 		public static async Task<StorageItemThumbnail?> GetThumbnailAsync(StorageFolder folder)

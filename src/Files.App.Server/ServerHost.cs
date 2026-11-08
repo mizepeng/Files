@@ -4,6 +4,7 @@
 using Windows.System;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.WindowsAndMessaging;
@@ -18,37 +19,48 @@ internal static class ServerHost
 	private static readonly Dictionary<long, (Process Process, ClientWindow Window)> clients = [];
 	private static long nextClient;
 	private static bool hadClient;
+	private static bool startupGraceExpired;
+	private static Timer? startupGrace;
 	private static bool quitting;
 	private static int pendingUpdates;
 	private static SystemTrayIcon? tray;
 	private static DispatcherQueueController controller = null!;
-	private static ServerSettings settings = null!;
+	private static BackgroundSettingsMonitor settings = null!;
 
 	internal static void Initialize()
 	{
 		controller = DispatcherQueueController.CreateOnDedicatedThread();
-		settings = new ServerSettings();
+		settings = new BackgroundSettingsMonitor();
 		settings.Changed += OnSettingsChanged;
 		OnSettingsChanged();
+		startupGrace = new Timer(_ =>
+		{
+			lock (gate)
+				startupGraceExpired = true;
+			ExitIfIdle();
+		}, null, TimeSpan.FromSeconds(30), Timeout.InfiniteTimeSpan);
 	}
 
-	internal static long AddClient(int processId)
+	internal static (long Id, bool CanRestorePreviousSession) AddClient(int processId)
 	{
 		lock (gate)
 		{
-			if (Program.ExitSignal.Task.IsCompleted)
-				throw new InvalidOperationException("The server is shutting down.");
+			if (quitting || Program.ExitSignal.Task.IsCompleted)
+				throw new COMException("The server is shutting down.", unchecked((int)0x80010108));
 
 			var id = ++nextClient;
-			hadClient = true;
 			Process? process = null;
 			try
 			{
 				process = Process.GetProcessById(processId);
 				process.Exited += (_, _) => controller.DispatcherQueue.TryEnqueue(() => RemoveClient(id));
 				process.EnableRaisingEvents = true;
+				// Decide under the registration lock so simultaneous launches cannot both restore.
+				var canRestorePreviousSession = clients.Values.All(client => client.Process.HasExited);
 				clients.Add(id, (process, default));
-				return id;
+				hadClient = true;
+				RecycleBinCatalog.AddClient(id);
+				return (id, canRestorePreviousSession);
 			}
 			catch
 			{
@@ -93,6 +105,16 @@ internal static class ServerHost
 		controller.DispatcherQueue.TryEnqueue(ExitIfIdle);
 	}
 
+	internal static void BeginPinnedFoldersUpdate(long id)
+	{
+		lock (gate)
+		{
+			if (!clients.ContainsKey(id))
+				throw new ObjectDisposedException(nameof(AppService));
+			ServerEvents.BeginPinnedFoldersUpdate(id);
+		}
+	}
+
 	internal static void RemoveClient(long id)
 	{
 		Process process;
@@ -103,6 +125,8 @@ internal static class ServerHost
 			process = client.Process;
 		}
 		process.Dispose();
+		ServerEvents.RemoveClient(id);
+		RecycleBinCatalog.RemoveClient(id);
 		if (!Program.ExitSignal.Task.IsCompleted)
 		{
 			settings.Refresh();
@@ -114,7 +138,8 @@ internal static class ServerHost
 	{
 		lock (gate)
 		{
-			if (clients.Count == 0 && (quitting || (hadClient && (!settings.KeepRunning || pendingUpdates > 0))))
+			if (clients.Count == 0 && (quitting || (hadClient && pendingUpdates > 0) ||
+				(!settings.KeepRunning && (hadClient || startupGraceExpired))))
 				Program.ExitSignal.TrySetResult(true);
 		}
 	}
@@ -140,6 +165,8 @@ internal static class ServerHost
 			});
 		}
 	}
+
+	internal static nint GetDialogWindowHandle() => (tray ??= new SystemTrayIcon()).WindowHandle;
 
 	internal static bool ActivateWindow()
 	{
@@ -179,7 +206,7 @@ internal static class ServerHost
 		ExitIfIdle();
 	}
 
-	private static Task InvokeAsync(Action action)
+	internal static Task InvokeAsync(Action action)
 	{
 		var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 		if (!controller.DispatcherQueue.TryEnqueue(() =>
@@ -200,9 +227,11 @@ internal static class ServerHost
 
 	internal static async Task ShutdownAsync()
 	{
+		startupGrace?.Dispose();
 		settings.Dispose();
 		await InvokeAsync(() =>
 		{
+			StartupServices.Stop();
 			tray?.Dispose();
 			tray = null;
 		});

@@ -34,9 +34,6 @@ namespace Files.App.Data.Items
 			set
 			{
 				text = value;
-				// Just in case path hasn't been set
-				if (ToolTip is "")
-					ToolTip = value;
 			}
 		}
 
@@ -51,11 +48,13 @@ namespace Files.App.Data.Items
 				ToolTip = string.IsNullOrEmpty(currentPath) ||
 					currentPath.Contains('?', StringComparison.Ordinal) ||
 					currentPath.StartsWith("shell:", StringComparison.OrdinalIgnoreCase) ||
+					currentPath.StartsWith("::{", StringComparison.Ordinal) ||
+					currentPath.StartsWith(@"\\SHELL\", StringComparison.OrdinalIgnoreCase) ||
 					currentPath.EndsWith(ShellLibraryItem.EXTENSION, StringComparison.OrdinalIgnoreCase) ||
 					currentPath == "Home" ||
 					currentPath == "ReleaseNotes" ||
 					currentPath == "Settings"
-					? Text
+					? null
 					: currentPath;
 			}
 		}
@@ -252,8 +251,8 @@ namespace Files.App.Data.Items
 
 		public bool IsHeader { get; set; }
 
-		private object toolTip = "";
-		public virtual object ToolTip
+		private object? toolTip;
+		public virtual object? ToolTip
 		{
 			get => toolTip;
 			set
@@ -282,7 +281,7 @@ namespace Files.App.Data.Items
 	{
 		private readonly IStorageTrashBinService StorageTrashBinService = Ioc.Default.GetRequiredService<IStorageTrashBinService>();
 
-		public async void RefreshSpaceUsed(object? sender, FileSystemEventArgs e)
+		public async void RefreshSpaceUsed(object? sender, EventArgs e)
 		{
 			await RefreshSpaceUsedAsync();
 		}
@@ -291,7 +290,7 @@ namespace Files.App.Data.Items
 		{
 			return MainWindow.Instance.DispatcherQueue.EnqueueOrInvokeAsync(async () =>
 			{
-				SpaceUsed = await Task.Run(() => StorageTrashBinService.GetSize());
+				SpaceUsed = await StorageTrashBinService.GetSizeAsync();
 			});
 		}
 
@@ -306,15 +305,14 @@ namespace Files.App.Data.Items
 			}
 		}
 
-		public override object ToolTip
+		public override object? ToolTip
 		{
 			get => SpaceUsed.ToSizeString();
 		}
 
 		public RecycleBinLocationItem()
 		{
-			StorageTrashBinService.Watcher.ItemAdded += RefreshSpaceUsed;
-			StorageTrashBinService.Watcher.ItemDeleted += RefreshSpaceUsed;
+			StorageTrashBinService.StateChanged += RefreshSpaceUsed;
 
 			_ = RefreshSpaceUsedAsync();
 		}
