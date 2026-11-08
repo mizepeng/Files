@@ -230,6 +230,7 @@
 					HorizontalAlignment="Stretch"
 					VerticalContentAlignment="Stretch"
 					ext:ScrollViewerMiddleClickExtensions.EnableMiddleClickScrolling="{x:Bind IsMiddleClickToScrollEnabled, Mode=OneWay}"
+					ext:ScrollViewerShiftWheelExtensions.EnableShiftWheelHorizontalScrolling="True"
 					x:FieldModifier="public"
 					AllowDrop="{x:Bind InstanceViewModel.IsPageTypeSearchResults, Converter={StaticResource BoolNegationConverter}, Mode=OneWay}"
 					AutomationProperties.AccessibilityView="Raw"
