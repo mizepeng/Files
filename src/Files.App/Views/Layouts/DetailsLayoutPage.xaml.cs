@@ -942,7 +942,7 @@ namespace Files.App.Views.Layouts
 			if (maxItemLength == 0)
 				return;
 
-			var columnSizeToFit = MeasureColumnEstimate(columnToResize, 5, maxItemLength);
+			var columnSizeToFit = MeasureColumnEstimate(columnToResize, 10);
 
 			if (columnSizeToFit > 1)
 			{
@@ -979,15 +979,12 @@ namespace Files.App.Views.Layouts
 			folderSettings.ColumnsViewModel = ColumnsViewModel;
 		}
 
-		private double MeasureColumnEstimate(int columnIndex, int measureItemsCount, int maxItemLength)
+		private double MeasureColumnEstimate(int columnIndex, int measureItemsCount)
 		{
-			if (columnIndex == 15) // sync status
-				return maxItemLength;
-
 			if (columnIndex == 8) // file tag
 				return MeasureTagColumnEstimate(columnIndex);
 
-			return MeasureTextColumnEstimate(columnIndex, measureItemsCount, maxItemLength);
+			return MeasureTextColumnEstimate(columnIndex, measureItemsCount);
 		}
 
 		private double MeasureTagColumnEstimate(int columnIndex)
@@ -1016,32 +1013,81 @@ namespace Files.App.Views.Layouts
 			return mesuredSize;
 		}
 
-		private double MeasureTextColumnEstimate(int columnIndex, int measureItemsCount, int maxItemLength)
+		private double MeasureTextColumnEstimate(int columnIndex, int measureItemsCount)
 		{
-			var tbs = DependencyObjectHelpers
+			// 从该列一个已显示的 TextBlock 上取字体样式；大小列的 TextBlock 没有名字，嵌在名为 ItemSize 的 Grid 里
+			var styleSource = DependencyObjectHelpers
 				.FindChildren<TextBlock>(FileList.ItemsPanelRoot)
-				.Where(tb => IsCorrectColumn(tb, columnIndex));
+				.FirstOrDefault(tb => IsCorrectColumn(tb, columnIndex) || (tb.Parent is FrameworkElement parent && IsCorrectColumn(parent, columnIndex)));
 
-			// heuristic: usually, text with more letters are wider than shorter text with wider letters
-			// with this, we can calculate avg width using longest text(s) to avoid overshooting the width
-			var widthPerLetter = tbs
-				.OrderByDescending(x => x.Text.Length)
-				.Where(tb => !string.IsNullOrEmpty(tb.Text))
-				.Take(measureItemsCount)
-				.Select(tb =>
-				{
-					var sampleTb = new TextBlock { Text = tb.Text, FontSize = tb.FontSize, FontFamily = tb.FontFamily };
-					sampleTb.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
-
-					return sampleTb.DesiredSize.Width / Math.Max(1, tb.Text.Length);
-				});
-
-			if (!widthPerLetter.Any())
+			if (styleSource is null)
 				return 0;
 
-			// Take weighted avg between mean and max since width is an estimate
-			var weightedAvg = (widthPerLetter.Average() + widthPerLetter.Max()) / 2;
-			return weightedAvg * maxItemLength;
+			// 从全部项（不只是已显示的）取该列文字，按估算宽度挑出最长的一批，再逐个实测取最大宽度
+			var widestWidth = FileList.Items
+				.Cast<ListedItem>()
+				.Select(item => GetColumnText(item, columnIndex))
+				.Where(text => !string.IsNullOrEmpty(text))
+				.Distinct()
+				.OrderByDescending(text => GetTextWidthUnits(text!))
+				.Take(measureItemsCount)
+				.Select(text =>
+				{
+					var sampleTb = new TextBlock
+					{
+						Text = text,
+						FontSize = styleSource.FontSize,
+						FontFamily = styleSource.FontFamily,
+						FontWeight = styleSource.FontWeight,
+						FontStyle = styleSource.FontStyle,
+						FontStretch = styleSource.FontStretch,
+						CharacterSpacing = styleSource.CharacterSpacing
+					};
+					sampleTb.Measure(new Size(Double.PositiveInfinity, Double.PositiveInfinity));
+
+					return sampleTb.DesiredSize.Width;
+				})
+				.DefaultIfEmpty(0)
+				.Max();
+
+			return widestWidth;
+		}
+
+		/// <summary>
+		/// 取某一项在指定文字列中显示的文本，与 DetailsLayoutPage.xaml 中各列的绑定保持一致。
+		/// 非文字列返回 null。
+		/// </summary>
+		private static string? GetColumnText(ListedItem item, int columnIndex)
+		{
+			return columnIndex switch
+			{
+				2 => item.Name,
+				4 => (item as IGitItem)?.GitLastCommitDateHumanized,
+				5 => (item as IGitItem)?.GitLastCommitMessage,
+				6 => (item as IGitItem)?.GitLastCommitAuthor,
+				7 => (item as IGitItem)?.GitLastCommitSha,
+				9 => item.ItemPath,
+				10 => (item as RecycleBinItem)?.ItemOriginalPath,
+				11 => (item as RecycleBinItem)?.ItemDateDeleted,
+				12 => item.ItemDateModified,
+				13 => item.ItemDateCreated,
+				14 => item.ItemType,
+				15 => item.SizeText,
+				_ => null
+			};
+		}
+
+		/// <summary>
+		/// 粗估文本宽度（只用于挑选候选，不用于最终宽度）：
+		/// 中日韩等全角字符按 2 个单位计，其余按 1 个单位计，避免较短的中文名被较长的英文名挤出候选。
+		/// </summary>
+		private static int GetTextWidthUnits(string text)
+		{
+			var units = 0;
+			foreach (var c in text)
+				units += c >= '\u2E80' ? 2 : 1;
+
+			return units;
 		}
 
 		private bool IsCorrectColumn(FrameworkElement element, int columnIndex)
