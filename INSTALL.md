@@ -133,8 +133,8 @@ $env:PATH = "C:\Program Files (x86)\Microsoft Visual Studio\Installer;" + $env:P
 Set-Location $repo
 
 # 1) 编译 C++ Launcher（「设为默认文件管理器」依赖它），产物会自动复制到 src\Files.App\Assets\FilesOpenDialog\
-msbuild src\Files.App.Launcher\Files.App.Launcher.vcxproj -t:Restore -p:RestorePackagesConfig=true "-p:SolutionDir=$repo\\" -p:Configuration=Release -p:Platform=x64 -v:quiet
-msbuild src\Files.App.Launcher\Files.App.Launcher.vcxproj -t:Build "-p:SolutionDir=$repo\\" -p:Configuration=Release -p:Platform=x64 -v:quiet -clp:ErrorsOnly
+#    Launcher 用 PackageReference 引用 NuGet 包（版本在根目录 Directory.Packages.props），带 -restore 即可还原
+msbuild -restore src\Files.App.Launcher\Files.App.Launcher.vcxproj -t:Build -p:Configuration=Release -p:Platform=x64 -v:quiet -clp:ErrorsOnly
 
 # 2) 单独还原 Files.App.Server：它不是 Files.App 的 ProjectReference，下一步的 -restore 不会还原它
 msbuild -t:Restore src\Files.App.Server\Files.App.Server.csproj -p:Configuration=Release -p:Platform=x64 -v:quiet
@@ -160,7 +160,7 @@ Test-Path src\Files.App\Assets\FilesOpenDialog\Files.App.Launcher.exe
 | `无法解析 SDK "Microsoft.NET.Sdk"` | 用了 VS 2022 的 MSBuild，改用 VS 2026 Build Tools |
 | `Could not read the Windows SDK's Platform.xml` | 未安装 Windows SDK 10.0.26100 |
 | `'vswhere.exe' 不是内部或外部命令`（链接 Files.App.Server 时） | 未把 VS Installer 目录加入 PATH，见构建脚本第一行 |
-| Launcher 编译报缺少 `Microsoft.Windows.ImplementationLibrary` | 还原时漏了 `-p:RestorePackagesConfig=true` 和 `-p:SolutionDir=` |
+| Launcher 编译报找不到 `wil/*.h`、`winrt/*.h` 等头文件 | 漏了 `-restore`，`Microsoft.Windows.ImplementationLibrary`、`Microsoft.Windows.CppWinRT` 两个 NuGet 包没有还原 |
 | 打包报找不到 `SQLite3Provider_winsqlite3` 等 Server 依赖 | 漏了构建脚本第 2 步，单独还原 `Files.App.Server` |
 | 双击安装包提示无法验证发布者 | 证书没有导入到「本地计算机 → 受信任的人」 |
 | 安装提示已安装相同或更高版本 | 递增 `Version` 后重新打包 |
