@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Windows.System;
@@ -67,6 +68,7 @@ namespace Files.App.Extensions
 
 			private readonly FrameworkElement _element;
 			private readonly PointerEventHandler _wheelHandler;
+			private readonly PointerEventHandler _scrollViewerWheelHandler;
 
 			private ScrollViewer? _scrollViewer;
 			private UIElement? _hookedContent;
@@ -80,6 +82,7 @@ namespace Files.App.Extensions
 			{
 				_element = element;
 				_wheelHandler = new PointerEventHandler(Content_PointerWheelChanged);
+				_scrollViewerWheelHandler = new PointerEventHandler(ScrollViewer_PointerWheelChanged);
 			}
 
 			public void Enable()
@@ -132,17 +135,52 @@ namespace Files.App.Extensions
 				_scrollViewer = scrollViewer;
 				_hookedContent = content;
 				_hookedContent.AddHandler(UIElement.PointerWheelChangedEvent, _wheelHandler, false);
+
+				// 指针在内容以外（如文件行下方的空白区）时，命中的是 ScrollViewer 模板里的背景，事件不经过内容层，
+				// 而 ScrollViewer 会先于实例处理程序处理滚轮并标记 Handled，因此在 ScrollViewer 上以 handledEventsToo 接收
+				_scrollViewer.AddHandler(UIElement.PointerWheelChangedEvent, _scrollViewerWheelHandler, true);
 			}
 
 			private void Detach()
 			{
 				_hookedContent?.RemoveHandler(UIElement.PointerWheelChangedEvent, _wheelHandler);
+				_scrollViewer?.RemoveHandler(UIElement.PointerWheelChangedEvent, _scrollViewerWheelHandler);
 				_hookedContent = null;
 				_scrollViewer = null;
 				ClearPending();
 			}
 
 			private void Content_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
+			{
+				TryScrollHorizontally(e);
+			}
+
+			private void ScrollViewer_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
+			{
+				// 经过内容层的事件已由 Content_PointerWheelChanged 处理，这里跳过，避免重复滚动
+				if (_scrollViewer is null || _hookedContent is null || IsWithin(e.OriginalSource as DependencyObject, _hookedContent))
+					return;
+
+				// 只在 ScrollViewer 无法纵向滚动时接管：此时它对这次滚轮的处理不会产生纵向滚动，接管不会覆盖原有效果；
+				// 内容不足一屏才会出现空白区，正好满足这个条件
+				if (_scrollViewer.ScrollableHeight > 0)
+					return;
+
+				TryScrollHorizontally(e);
+			}
+
+			private static bool IsWithin(DependencyObject? element, DependencyObject ancestor)
+			{
+				for (var current = element; current is not null; current = VisualTreeHelper.GetParent(current))
+				{
+					if (ReferenceEquals(current, ancestor))
+						return true;
+				}
+
+				return false;
+			}
+
+			private void TryScrollHorizontally(PointerRoutedEventArgs e)
 			{
 				if (e.KeyModifiers is not VirtualKeyModifiers.Shift || _scrollViewer is null)
 					return;
