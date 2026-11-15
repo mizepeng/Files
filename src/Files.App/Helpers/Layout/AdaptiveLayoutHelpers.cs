@@ -11,8 +11,12 @@ namespace Files.App.Helpers
 		private static ILayoutSettingsService LayoutSettingsService { get; } = Ioc.Default.GetRequiredService<ILayoutSettingsService>();
 		private static IContentPageContext ContentPageContext { get; } = Ioc.Default.GetRequiredService<IContentPageContext>();
 		private static IWindowsIniService WindowsIniService { get; } = Ioc.Default.GetRequiredService<IWindowsIniService>();
+		private static IFoldersSettingsService FoldersSettingsService { get; } = Ioc.Default.GetRequiredService<IFoldersSettingsService>();
 
-		// Predicts the layout from desktop.ini or a small directory sample, so navigation opens in the right layout without a post-enumeration switch
+		// 项数超过该值的目录按内容判定时固定用详细信息：导航时预测无需统计全部项，枚举完成后也不再切换布局
+		private const int MaxGridLayoutItems = 5000;
+
+		// Predicts the layout from desktop.ini or a count of the directory entries (up to a limit), so navigation opens in the right layout without a post-enumeration switch
 		public static bool TryPredictLayout(string? path, out FolderLayoutModes layout)
 		{
 			layout = FolderLayoutModes.DetailsView;
@@ -36,13 +40,28 @@ namespace Files.App.Helpers
 					return true;
 				}
 
+				// 按与枚举完成后判定（GetContentLayout）相同的口径统计全部项：只取文件名和属性，不读其他元数据，
+				// 抽样只看前若干项会与最终判定不一致，打开后先显示一种布局、加载完又跳到另一种
+				bool showHiddenItems = FoldersSettingsService.ShowHiddenItems;
+				bool showProtectedSystemFiles = FoldersSettingsService.ShowProtectedSystemFiles;
+				bool showDotFiles = FoldersSettingsService.ShowDotFiles;
+
 				int total = 0, media = 0;
-				foreach (var entry in SystemIO.Directory.EnumerateFileSystemEntries(path))
+				foreach (var entry in new SystemIO.DirectoryInfo(path).EnumerateFileSystemInfos())
 				{
-					if (IsMediaExtension(SystemIO.Path.GetExtension(entry)))
+					// 与 Win32StorageEnumerator 的显示过滤规则保持一致
+					var isHidden = entry.Attributes.HasFlag(SystemIO.FileAttributes.Hidden);
+					var isSystem = entry.Attributes.HasFlag(SystemIO.FileAttributes.System);
+					if (isHidden && (!showHiddenItems || (isSystem && !showProtectedSystemFiles)))
+						continue;
+					if (entry.Name.StartsWith('.') && !showDotFiles)
+						continue;
+
+					// 超大目录直接定为详细信息，不必统计完
+					if (++total > MaxGridLayoutItems)
+						return true;
+					if (entry is SystemIO.FileInfo && IsMediaExtension(entry.Extension))
 						media++;
-					if (++total >= 200)
-						break;
 				}
 
 				if (total is 0)
@@ -109,6 +128,10 @@ namespace Files.App.Helpers
 			int itemCount = filesAndFolders.Count;
 			if (filesAndFolders.Count is 0)
 				return Layouts.None;
+
+			// 与 TryPredictLayout 一致，超大目录固定用详细信息
+			if (itemCount > MaxGridLayoutItems)
+				return Layouts.Detail;
 
 			float mediaPercentage = 100f * filesAndFolders.Count(IsMedia) / itemCount;
 

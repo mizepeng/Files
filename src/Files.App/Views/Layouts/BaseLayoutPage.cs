@@ -459,7 +459,9 @@ namespace Files.App.Views.Layouts
 				var folderSettings = parentShellPage.InstanceViewModel.FolderSettings;
 				var workingDirectory = shellViewModel.WorkingDirectory
 					?? throw new InvalidOperationException("The shell page does not have a working directory.");
-				var layoutType = folderSettings.GetLayoutType(workingDirectory);
+				// 布局切换时不再按目录前 200 项重新预测：枚举完成后的自适应判定（看全部项）已写入 LayoutMode，
+				// 若再预测会把它覆盖回去，导致不跳转页面、IsLayoutModeChanging 停在 true，文件列表被隐藏成空白
+				var layoutType = folderSettings.GetLayoutType(workingDirectory, predictAdaptiveLayout: false);
 
 				if (layoutType != parentShellPage.CurrentPageType)
 				{
