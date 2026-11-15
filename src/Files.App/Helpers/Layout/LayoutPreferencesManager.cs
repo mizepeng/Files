@@ -205,14 +205,15 @@ namespace Files.App.Helpers
 
 		// Methods
 
-		public Type GetLayoutType(string? path, bool changeLayoutMode = true)
+		public Type GetLayoutType(string? path, bool changeLayoutMode = true, bool predictAdaptiveLayout = true)
 		{
 			var preferencesItem = GetLayoutPreferencesForPath(path, out var isDefaultLayout);
 			if (preferencesItem is null)
 				return typeof(DetailsLayoutPage);
 
 			// Predicting the adaptive decision at navigation time avoids a post-enumeration page switch
-			if (IsAdaptiveLayoutEnabled && !preferencesItem.IsAdaptiveLayoutOverridden &&
+			if (predictAdaptiveLayout &&
+				IsAdaptiveLayoutEnabled && !preferencesItem.IsAdaptiveLayoutOverridden &&
 				isDefaultLayout is not false &&
 				AdaptiveLayoutHelpers.TryPredictLayout(path, out var resolvedLayout) &&
 				(isDefaultLayout ?? IsPathUsingDefaultLayout(path)))
